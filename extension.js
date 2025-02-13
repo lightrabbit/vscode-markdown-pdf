@@ -185,7 +185,6 @@ function convertMarkdownToHtml(filename, type, text) {
     }
 
   // convert the img src of the markdown
-  var cheerio = require('cheerio');
   var defaultRender = md.renderer.rules.image;
   md.renderer.rules.image = function (tokens, idx, options, env, self) {
     var token = tokens[idx];
@@ -203,16 +202,11 @@ function convertMarkdownToHtml(filename, type, text) {
   };
 
   if (type !== 'html') {
+    const converter = convertHtmlImgPath(filename);
     // convert the img src of the html
     md.renderer.rules.html_block = function (tokens, idx) {
       var html = tokens[idx].content;
-      var $ = cheerio.load(html);
-      $('img').each(function () {
-        var src = $(this).attr('src');
-        var href = convertImgPath(src, filename);
-        $(this).attr('src', href);
-      });
-      return $.html();
+      return converter(html);
     };
   }
 
@@ -635,6 +629,40 @@ function readFile(filename, encode) {
     return fs.readFileSync(filename, encode);
   } else {
     return '';
+  }
+}
+
+function convertHtmlImgPath(filename) {
+  let output = '';
+  const parser = require('htmlparser2');
+  const p = new parser.Parser({
+    onclosetag(name, isImplied) {
+      if (isImplied) return;
+      output += `</${name}>`
+    },
+    onopentag(name, attribs, isImplied) {
+      if (isImplied) return;
+
+      if (name === 'img') {
+        var src = attribs['src'];
+        var href = convertImgPath(src, filename);
+        attribs['src'] = href;
+      }
+      const attrStr = Object.entries(attribs).map(([k, v]) => `${k}="${v}"`).join(' ');
+      output += `<${name} ${attrStr}>`
+    },
+    ontext(data) {
+      output += data;
+    },
+    oncomment(data) {
+      output += `<!--${data}-->`
+    },
+  }, { decodeEntities: false,  });
+  return function (input) {
+    p.write(input);
+    const result = output;
+    output = '';
+    return result;
   }
 }
 
